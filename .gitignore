@@ -103,5 +103,8 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+# local dev
+*.swp
+
 # runtime config
 config.yaml
