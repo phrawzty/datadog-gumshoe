@@ -87,17 +87,19 @@ def hello_github(urls, token):
 
     for project_url in urls:
         extract = project_url.split('/')
-        api_url = 'https://api.github.com/repos/' + extract[3] + '/' + extract[4] + '/commits/master'
-        obj = {'project_url': project_url, 'api_url': api_url }
+        repos_api_url = 'https://api.github.com/repos/' + extract[3] + '/' + extract[4]
+        obj = {'project_url': project_url, 'repos_api_url': repos_api_url }
         githubs.append(obj)
 
-    # Stuff for the requests
+    # Stuff for the request
     p = {'access_token': token}
     h = {'Accept': 'application/vnd.github.v3+json'}
 
     for target in githubs:
-        #r.requests.get(target['api_url'].strip(), params=p, headers=h)
-        print(target['api_url'].strip() + '?access_token=' + token)
+        #r.requests.get(target['repos_api_url'].strip() + '/commits/master', params=p, headers=h)
+        print(target['repos_api_url'].strip() + '/commits/master?access_token=' + token)
+        #r.requests.get(target['repos_api_url'].strip() + '/contributors', params=p, headers=h)
+        print(target['repos_api_url'].strip() + '/contributors?access_token=' + token)
 
     #return json
 
