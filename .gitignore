@@ -108,3 +108,4 @@ venv.bak/
 
 # runtime config
 config.yaml
+output/

@@ -1,4 +1,7 @@
-from sys import stderr, stdout
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+from sys import stderr
+from urllib.parse import urlparse
 import os, tempfile
 import json
 import requests
@@ -27,11 +30,14 @@ def sanity_check(config):
     if not 'libraries_src' in config:
         config['libraries_src'] = 'https://raw.githubusercontent.com/DataDog/documentation/master/data/libraries.yaml'
 
+    if not 'output_dir' in config:
+        config['output_dir'] = './output'
+
     return config
 
 # Download a non-binary file from an HTTP target.
 def text_downloader(url, target):
-    stdout.write('Attempting to download ' + url + '\n')
+    print('Attempting to download ' + url)
     with open(target, 'wb') as f:
         r = requests.get(url, stream=True)
 
@@ -47,7 +53,7 @@ def text_downloader(url, target):
 
             f.write(block)
 
-    stdout.write('Downloaded ' + target + '\n')
+    print('Downloaded ' + target)
 
 # Process the libraries.yaml and load into a handy dict.
 def process_libraries(src):
@@ -64,18 +70,17 @@ def process_libraries(src):
 # Extract a list of URLs to check. n.b. This reads the table; the list of stuff
 # under "Community Integrations" is plain markdown in a different file…
 def extract_urls(y):
-    # Then extract the URLs.
-    urls = []
+    urls = {}
     for top in y:
         for language in y[top]:
             for obj in language:
                 for lib in language[obj]:
-                    # GitHub is the most popular; ignore the rest for now. :P
-                    # Also, only non-Datadog repos are interesting…
-                    if 'github' in lib['link']:
-                        split = lib['link'].split('/')
-                        if 'DataDog' not in split[3]:
-                            urls.append(lib['link'])
+                    o = urlparse(lib['link'])
+                    # Dict where key=host, value=URL
+                    if not o.netloc in urls:
+                        urls[o.netloc] = []
+                    else:
+                        urls[o.netloc].append(lib['link'])
 
     return urls
 
@@ -83,25 +88,55 @@ def extract_urls(y):
 # Information.
 def hello_github(urls, token):
 
-    githubs = []
+    projects = []
 
     for project_url in urls:
         extract = project_url.split('/')
         repos_api_url = 'https://api.github.com/repos/' + extract[3] + '/' + extract[4]
         obj = {'project_url': project_url, 'repos_api_url': repos_api_url }
-        githubs.append(obj)
+        projects.append(obj)
 
     # Stuff for the request
     p = {'access_token': token}
     h = {'Accept': 'application/vnd.github.v3+json'}
 
-    for target in githubs:
-        #r.requests.get(target['repos_api_url'].strip() + '/commits/master', params=p, headers=h)
-        print(target['repos_api_url'].strip() + '/commits/master?access_token=' + token)
-        #r.requests.get(target['repos_api_url'].strip() + '/contributors', params=p, headers=h)
-        print(target['repos_api_url'].strip() + '/contributors?access_token=' + token)
+    for project in projects:
+        print('Processing: ' + project['project_url'])
 
-    #return json
+        # List the top contributors.
+        # https://developer.github.com/v3/repos/#list-contributors
+        r = requests.get(project['repos_api_url'].strip() + '/contributors', params=p, headers=h)
+        body = json.loads(r.text)
+
+        # Note the top contributors for the project.
+        project['contributors'] = {}
+
+        for contributor in body:
+            project['contributors'][contributor['login']] = contributor['contributions']
+
+        # Yoink the previous three months of commits.
+        three_months_ago = datetime.now() - relativedelta(months=3)
+        stamp = three_months_ago.replace(microsecond=0).isoformat() + 'Z'
+
+        r = requests.get(project['repos_api_url'].strip() + '/commits?since=' + stamp, params=p, headers=h)
+        body = json.loads(r.text)
+
+        project['top_recents'] = {}
+
+        for commit in body:
+            try:
+                if not commit['author']['login'] in project['top_recents']:
+                    project['top_recents'][commit['author']['login']] = 1
+                else:
+                    project['top_recents'][commit['author']['login']] += 1
+            # Dunno why but sometimes a "not found" SHA is returned - ignore it!
+            except TypeError:
+                pass
+
+        # The API URL isn't useful anymore.
+        del project['repos_api_url']
+
+    return projects
 
 
 
@@ -117,7 +152,21 @@ config = sanity_check(config)
 text_downloader(config['libraries_src'], config['temp_dir'] + '/libraries.yaml')
 
 # Extract the full list of URLs from the libraries source.
-base_urls = extract_urls(process_libraries(config['temp_dir'] + '/libraries.yaml'))
+list_urls = extract_urls(process_libraries(config['temp_dir'] + '/libraries.yaml'))
 
-# Query the urls and extract useful information!
-useful_info = hello_github(base_urls, config['github_token'])
+# Query the GitHub URLs and extract useful information.
+# n.b. We're not interested in the DataDog repos…
+github_urls = []
+
+for url in list_urls['github.com']:
+    if not 'github.com/DataDog' in url:
+        github_urls.append(url)
+
+github_info = hello_github(github_urls, config['github_token'])
+
+# Write out the GitHub results.
+with open(config['output_dir'] + '/github_results.yaml', 'w') as f:
+    yaml.dump(github_info, f)
+
+# And scene!
+exit(0)
