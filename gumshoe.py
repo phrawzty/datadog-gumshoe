@@ -76,11 +76,10 @@ def extract_urls(y):
             for obj in language:
                 for lib in language[obj]:
                     o = urlparse(lib['link'])
-                    # Dict where key=host, value=URL
                     if not o.netloc in urls:
                         urls[o.netloc] = []
-                    else:
-                        urls[o.netloc].append(lib['link'])
+
+                    urls[o.netloc].append(lib['link'])
 
     return urls
 
@@ -93,7 +92,11 @@ def hello_github(urls, token):
     for project_url in urls:
         extract = project_url.split('/')
         repos_api_url = 'https://api.github.com/repos/' + extract[3] + '/' + extract[4]
-        obj = {'project_url': project_url, 'repos_api_url': repos_api_url }
+        obj = {
+            'project_url': project_url,
+            'repos_api_url': repos_api_url,
+            '_name': extract[4]
+            }
         projects.append(obj)
 
     # Stuff for the request
